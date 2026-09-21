@@ -1,0 +1,13 @@
+{
+  "name": "task-orchestrator",
+  "version": "0.1.0",
+  "description": "Provider-neutral contracts for durable coding-worker orchestration.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.cjs",
+    "check": "node --check core/coding-worker-contract.cjs && node --check core/durable-job-schema.cjs && node --check core/runtime-config.cjs && node --check core/worker-adapter-resolver.cjs"
+  }
+}
