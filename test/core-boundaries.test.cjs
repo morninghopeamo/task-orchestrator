@@ -22,6 +22,13 @@ function worker() {
   return {
     workerId: 'fixture-worker',
     contractVersion: CODING_WORKER_CONTRACT_VERSION,
+    admission: {
+      externalControl: true,
+      sessionAddressability: true,
+      sameSessionContinuation: true,
+      observableExecution: true,
+      deterministicInterruption: true,
+    },
     start: active,
     continue: active,
     cancel: active,
@@ -44,6 +51,25 @@ test('the resolver selects an injected adapter by neutral identifier', () => {
   const resolve = createWorkerAdapterResolver({ 'fixture-worker': worker });
   assert.equal(resolve({ workerId: 'fixture-worker' }).workerId, 'fixture-worker');
   assert.throws(() => resolve({ workerId: 'missing-worker' }), /unavailable/);
+});
+
+test('the resolver rejects a structurally valid worker without admission capabilities', () => {
+  const resolve = createWorkerAdapterResolver({
+    'reference-worker': () => ({ ...worker(), workerId: 'reference-worker', admission: { externalControl: true } }),
+  });
+  assert.throws(
+    () => resolve({ workerId: 'reference-worker' }),
+    (error) => {
+      assert.equal(error.admission.status, 'REJECTED');
+      assert.deepEqual(error.admission.reasons, [
+        'SESSION_ADDRESSABILITY_REQUIRED',
+        'CONTINUATION_REQUIRED',
+        'OBSERVABLE_EXECUTION_REQUIRED',
+        'INTERRUPTION_SEMANTICS_REQUIRED',
+      ]);
+      return true;
+    },
+  );
 });
 
 test('default workspace configuration has no built-in machine path', () => {

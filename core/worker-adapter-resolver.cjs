@@ -1,6 +1,7 @@
 'use strict';
 
 const { assertWorkerDescriptor } = require('./coding-worker-contract.cjs');
+const { ADMISSION_STATUSES, validateWorkerAdmission } = require('./worker-admission-contract.cjs');
 
 // The durable core resolves a worker by its neutral identifier.  Concrete
 // providers are registered by the composition layer; this module never
@@ -15,7 +16,14 @@ function createWorkerAdapterResolver(workerFactories = {}) {
     }
     const factory = factories.get(workerId);
     if (typeof factory !== 'function') throw new Error(`Worker adapter is unavailable for ${workerId}`);
-    return assertWorkerDescriptor(factory(options));
+    const worker = assertWorkerDescriptor(factory(options));
+    const admission = validateWorkerAdmission(worker);
+    if (admission.status !== ADMISSION_STATUSES.ADMITTED) {
+      const error = new Error(`Worker adapter does not satisfy the admission contract: ${admission.reasons.join(', ')}`);
+      error.admission = admission;
+      throw error;
+    }
+    return worker;
   };
 }
 

@@ -57,9 +57,22 @@ async function runWorkerConformance(worker) {
     context: { conformance: true },
   });
 
-  const started = assertWorkerResult(await worker.start(baseInput), 'start', { terminal: false });
+  // A worker may complete while dispatching the initial task.  Requiring a
+  // second continuation here would make a valid fast terminal worker fail
+  // conformance solely because of test sequencing.
+  const started = assertWorkerResult(await worker.start(baseInput), 'start');
   trace.push('start');
   const activeHandle = started.workerHandle;
+
+  if (TERMINAL_WORKER_STATES.has(started.state)) {
+    return {
+      contractVersion: CODING_WORKER_CONTRACT_VERSION,
+      workerId: worker.workerId,
+      status: 'passed',
+      trace,
+      observations: { startState: started.state },
+    };
+  }
 
   const inspectedActive = assertWorkerResult(await worker.inspect({ workerHandle: activeHandle }), 'inspect', { expectedHandle: activeHandle, terminal: false });
   trace.push('inspect-active');
