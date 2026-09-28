@@ -6,6 +6,12 @@
 
 调用应用可以专注于判断、任务拆解和监督，worker 则负责被委派的工作。本仓库提供 provider-neutral 的 contract 和边界辅助工具，把这次委派收敛为一条可持久化的任务生命周期，无需由调用方亲自处理每一次中断、继续执行和 worker 会话。
 
+## v0.3：持久化外部 Agent 编排
+
+本次发布将 Task Orchestrator 定位为**应用侧基础设施**：供应用或 Agent 嵌入，用于将长时间运行的工作委派给外部 Agent。它不是某个聊天产品的功能补丁，也不绑定某一家 worker 供应商。
+
+公开实现仍保持 provider-neutral，并可完全离线复现。另有一套受控部署已在真实外部 worker 实现上验证同一生命周期。该部署是生命周期的证据，不构成对所有 ACP agent 或所有产品版本的兼容性承诺。
+
 ## 示例工作流
 
 主 Agent 可以通过显式配置的 ACP stdio profile，将任务提交给仓库内置的 ACP Reference Worker。
@@ -35,25 +41,22 @@ Task Orchestrator 为这些问题提供一个中性边界：一条可持久化�
 ## 架构
 
 ```text
-Job
+宿主应用 / Agent
  |
  v
-Worker Resolver
+Task Orchestrator
+ |- 持久化 Job State：id、revision、不透明 worker handle、终态 result
+ |- Supervisor：start、inspect、recover、cancel、同一会话 continuation
+ `- Human-action boundary：显式等待 / 决策 / continuation
  |
  v
-Worker Admission Contract
+Worker Adapter（协议边界）
  |
  v
-ACP Reference Worker（参考集成）
- |
- v
-可寻址会话 / 同一会话 continuation
- |
- v
-结构化 Result
+ACP-compatible external agent
 ```
 
-调用应用负责持久化、调度、认证和用户交互。核心 contract 负责持久化生命周期与不透明的 worker handle；adapter 负责各 provider 的协议边界。
+调用应用负责存储部署、调度、认证，以及人类决策的用户体验。核心 contract 负责持久化生命周期与不透明的 worker handle；adapter 负责各 provider 的协议边界。已经记录为终态的 Job，不会被迟到的异步 worker result 覆写。
 
 ## 它提供什么
 
@@ -64,6 +67,26 @@ ACP Reference Worker（参考集成）
 - 提供 durable JSON job store、detached supervisor 和公开的 `run` 入口。
 - 从外部的序列化 profile 重建 ACP Reference Worker；durable job 不保存命令路径、环境或凭据。
 - 提供离线 conformance probe，用于验证 adapter 是否符合 contract。
+
+## 能力与证据矩阵
+
+证据标签说明的是实际已经跑过的范围，不能互相替代。`OFFLINE` 仅指确定性的本地 fixture；`LIVE_PROVIDER` 指受控的真实外部 worker 部署。两者都不保证所有使用相似协议名称的 worker 具有相同行为。
+
+| 能力 | 公开仓库证据 | 受控真实 worker 证据 | 范围边界 |
+| --- | --- | --- | --- |
+| ACP `initialize` → `session/new` → `session/prompt` | `OFFLINE` fixture | `LIVE_PROVIDER` | reference adapter 是协议示例，不是通用 ACP runtime。 |
+| 同一会话 continuation | `OFFLINE` fixture | `LIVE_PROVIDER` | 不透明 handle 必须保持可寻址。 |
+| 持久化 worker handle，以及新 supervisor 进程中的会话恢复 | `OFFLINE` detached-supervisor 与 recovery fixture | `LIVE_PROVIDER` | profile、命令路径、环境和凭据不进入 durable job。 |
+| 显式取消 | `OFFLINE` fixture | `LIVE_PROVIDER` | 取消是 adapter 操作，且有唯一的规范终态结果。 |
+| cancel 后的 barrier 与同一会话复用 | 不属于公开 reference worker 的兼容性承诺 | `LIVE_PROVIDER` | 这只是部署证据，不能推定其他 worker 也支持。 |
+| Durable job、detached supervision 与终态 result 权威 | `OFFLINE` fixture | `LIVE_PROVIDER` | 公开 store 有意保持小型；生产持久化和调度由嵌入方选择。 |
+| Human-action wait / decision / continuation boundary | `OFFLINE` lifecycle state model | 不作为 live UI 演示对外声明 | 宿主应用必须提供显式的人类决策与 UI。 |
+
+## 已验证的真实 worker 实现
+
+**WorkBuddy 是一个已验证的真实 worker 实现，而不是产品本体。** 在受控部署中，它的 ACP worker 路径已实际经过初始化、会话创建与 prompt、同一会话 continuation、持久化会话恢复、取消、取消后的复用 barrier，以及持久化 supervisor/job 管理。一项真实委派工作在 continuation 后通过了其 authoritative completion gate。
+
+部署专属的 adapter、路径、凭据、运行记录、工作负载和操作细节均不会在这里公开。因此，本仓库不声称 clone 后即可连接 WorkBuddy，不声称所有 WorkBuddy 安装都兼容，也不声称其他 ACP agent 已被验证。
 
 ## 任务生命周期与监督模型
 
@@ -98,7 +121,7 @@ npm run check
 
 ## 当前范围与 adapter 边界
 
-本仓库有意提供一条窄执行路径，而非完整的执行产品。它不包含用户界面、内置 worker runtime、凭据、自动 worker 选择、HTTP transport、调度、重试、fallback 或 multi-worker routing。
+本仓库有意提供一条窄执行路径，而非完整的执行产品。它不包含用户界面、内置 worker runtime、凭据、自动 worker 选择、HTTP transport、生产调度器、重试策略、fallback 或 multi-worker routing。
 
 ACP Reference Worker 仍位于 `core/` 之外；操作者在 profile 文件中提供明确的 command、args 和 environment。仅克隆本仓库不会自动连接任何 worker。
 
@@ -126,7 +149,7 @@ ACP Reference Worker 是一个参考集成，不代表所有 ACP agent 都受支
 
 - GUI automation 或通用桌面 Agent 控制。
 - provider 专属 scraping、未文档化 hack 或凭据发现。
-- 隐藏的人类介入式 continuation。
+- 内置或隐藏的人类介入式 UI；嵌入方必须显式呈现人类选择。
 - 通用 ACP runtime 或兼容性承诺。
 
 ## 贡献

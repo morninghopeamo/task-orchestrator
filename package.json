@@ -1,7 +1,7 @@
 {
   "name": "task-orchestrator",
-  "version": "0.2.0",
-  "description": "Durable orchestration contracts for externally controllable AI workers.",
+  "version": "0.3.0",
+  "description": "Durable, provider-neutral orchestration for external AI workers.",
   "license": "MIT",
   "private": true,
   "repository": {

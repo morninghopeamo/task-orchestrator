@@ -6,6 +6,12 @@ English | [简体中文](./README.zh-CN.md)
 
 The calling application can focus on judgment, task breakdown, and supervision. The worker performs the delegated work. This repository provides provider-neutral contracts and boundary helpers that make the handoff a durable job lifecycle without making the caller manage every interruption, continuation, and worker session itself.
 
+## v0.3: durable external-agent orchestration
+
+This release positions Task Orchestrator as **application-side infrastructure**: an embeddable layer for an application or agent that delegates long-running work to an external agent. It is not a workaround for any particular chat product, and it is not a wrapper around one worker vendor.
+
+The public implementation remains provider-neutral and reproducible offline. A separate controlled deployment validated the same lifecycle against a real external worker implementation. That deployment is evidence for the lifecycle, not a compatibility promise for every ACP agent or product version.
+
 ## Example workflow
 
 A primary agent can submit a task to the included ACP Reference Worker through an explicitly configured ACP stdio profile.
@@ -35,25 +41,22 @@ Task Orchestrator gives the application a neutral boundary for those concerns: o
 ## Architecture
 
 ```text
-Job
+Host application / agent
  |
  v
-Worker resolver
+Task Orchestrator
+ |- Durable job state: id, revision, opaque worker handle, terminal result
+ |- Supervisor: start, inspect, recover, cancel, same-session continuation
+ `- Human-action boundary: explicit wait / decision / continuation
  |
  v
-Admission contract
+Worker adapter (protocol boundary)
  |
  v
-ACP Reference Worker (reference integration)
- |
- v
-Addressable session / same-session continuation
- |
- v
-Structured result
+ACP-compatible external agent
 ```
 
-The calling application owns persistence, scheduling, authentication, and user interaction. Core contracts own the durable lifecycle and opaque worker handle; an adapter owns its provider protocol boundary.
+The calling application owns storage deployment, scheduling, authentication, and the user experience for human decisions. Core contracts own the durable lifecycle and opaque worker handle; an adapter owns its provider protocol boundary. A late asynchronous worker result cannot overwrite the job's already-recorded terminal fact.
 
 ## What it does
 
@@ -64,6 +67,26 @@ The calling application owns persistence, scheduling, authentication, and user i
 - Includes a durable JSON job store, detached supervisor, and public `run` entrypoint.
 - Reconstructs the ACP Reference Worker from an external serialized profile; the durable job never contains command paths, environment, or credentials.
 - Includes an offline conformance probe for verifying an adapter against the contract.
+
+## Capability and evidence matrix
+
+Evidence labels describe what has actually been exercised; they are not interchangeable. `OFFLINE` means deterministic local fixtures only. `LIVE_PROVIDER` means a controlled real external-worker deployment. Neither label promises that every worker implementing a similarly named protocol behaves the same way.
+
+| Capability | Public repository evidence | Controlled real-worker evidence | Scope boundary |
+| --- | --- | --- | --- |
+| ACP `initialize` → `session/new` → `session/prompt` | `OFFLINE` fixture | `LIVE_PROVIDER` | The reference adapter is a protocol example, not a universal ACP runtime. |
+| Same-session continuation | `OFFLINE` fixture | `LIVE_PROVIDER` | The opaque handle must remain addressable. |
+| Persisted worker handle and session restoration after a new supervisor process | `OFFLINE` detached-supervisor and recovery fixtures | `LIVE_PROVIDER` | Profiles, command paths, environments, and credentials stay outside the durable job. |
+| Explicit cancellation | `OFFLINE` fixture | `LIVE_PROVIDER` | Cancellation is an adapter operation with a canonical terminal outcome. |
+| Post-cancel barrier and same-session reuse | Not part of the public reference-worker compatibility claim | `LIVE_PROVIDER` | This is deployment evidence only; it is not assumed for another worker. |
+| Durable job, detached supervision, and terminal-result authority | `OFFLINE` fixture | `LIVE_PROVIDER` | The public store is intentionally small; embedders choose their production persistence and scheduling. |
+| Human-action wait / decision / continuation boundary | `OFFLINE` lifecycle state model | Not presented as a live UI demonstration | The host application must provide an explicit human decision and UI. |
+
+## Validated real-world worker implementation
+
+**WorkBuddy is a validated real-world worker implementation, not the product itself.** In a controlled deployment, its ACP worker path exercised initialization, session creation and prompting, same-session continuation, persisted-session restoration, cancellation, a post-cancel barrier before reuse, and durable supervisor/job handling. A real delegated workload reached its authoritative completion gate after continuation.
+
+The deployment-specific adapter, paths, credentials, runtime traces, workloads, and operating details are intentionally not published here. This repository therefore does not claim that cloning it connects to WorkBuddy, that every WorkBuddy installation is compatible, or that any other ACP agent has been validated.
 
 ## Job lifecycle and supervision
 
@@ -98,7 +121,7 @@ Copy `.env.example` to `.env` only if a deployment needs a default workspace pat
 
 ## Current scope and adapter boundary
 
-This repository deliberately provides a narrow execution path, not a complete execution product. It does not include a user interface, bundled worker runtime, credentials, automatic worker selection, HTTP transport, scheduling, retry, fallback, or multi-worker routing.
+This repository deliberately provides a narrow execution path, not a complete execution product. It does not include a user interface, bundled worker runtime, credentials, automatic worker selection, HTTP transport, production scheduler, retry policy, fallback, or multi-worker routing.
 
 The ACP Reference Worker remains outside `core/`; the operator supplies its explicit command, arguments, and environment in a profile file. Cloning this repository does not connect to a worker by itself.
 
@@ -126,7 +149,7 @@ The default repository evidence level is **OFFLINE + STATIC**. It verifies the c
 
 - GUI automation or universal desktop-agent control.
 - Provider-specific scraping, undocumented hacks, or credential discovery.
-- Hidden human-in-the-loop continuation.
+- A bundled or hidden human-in-the-loop UI; embedders must make human choices explicit.
 - A universal ACP runtime or compatibility claim.
 
 ## Contributing
